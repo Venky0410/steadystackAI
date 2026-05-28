@@ -1,2 +1,10 @@
 # steadystackAI
-A production-grade SRE platform on AWS EKS with full observability,  CI/CD, chaos engineering, security hardening, and AI-powered incident  summarization and postmortem generation using Claude API.
+## Progress
+### ✅ Phase 1 - Infrastructure
+- [x] VPC created (eu-west-1)
+- [x] Public Subnets (2)
+- [x] Private Subnets (2)
+- [x] Internet Gateway
+- [x] NAT Gateway
+- [x] Route Tables
+- [ ] EKS Cluster (next)..
