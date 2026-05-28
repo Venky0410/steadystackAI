@@ -7,4 +7,6 @@
 - [x] Internet Gateway
 - [x] NAT Gateway
 - [x] Route Tables
-- [ ] EKS Cluster (next)..
+- [x] EKS Cluster v1.31
+- [x] Worker Nodes (t3.medium x2)
+- [x] kubectl configured
