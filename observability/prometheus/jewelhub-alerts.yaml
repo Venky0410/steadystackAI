@@ -1,0 +1,67 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: jewelhub-alerts
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: jewelhub.rules
+    interval: 30s
+    rules:
+
+    # Alert 1 - Pod Down
+    - alert: JewelHubPodDown
+      expr: kube_pod_status_phase{namespace="jewelhub", phase="Failed"} > 0
+      for: 1m
+      labels:
+        severity: critical
+        service: jewelhub
+      annotations:
+        summary: "JewelHub pod is down!"
+        description: "Pod {{ $labels.pod }} in jewelhub namespace has failed"
+
+    # Alert 2 - High CPU
+    - alert: JewelHubHighCPU
+      expr: sum(rate(container_cpu_usage_seconds_total{namespace="jewelhub"}[5m])) by (pod) > 0.8
+      for: 2m
+      labels:
+        severity: warning
+        service: jewelhub
+      annotations:
+        summary: "JewelHub high CPU usage!"
+        description: "Pod {{ $labels.pod }} CPU usage is above 80%"
+
+    # Alert 3 - High Memory
+    - alert: JewelHubHighMemory
+      expr: sum(container_memory_usage_bytes{namespace="jewelhub"}) by (pod) > 200000000
+      for: 2m
+      labels:
+        severity: warning
+        service: jewelhub
+      annotations:
+        summary: "JewelHub high memory usage!"
+        description: "Pod {{ $labels.pod }} memory usage is above 200MB"
+
+    # Alert 4 - Pod Restarting
+    - alert: JewelHubPodRestarting
+      expr: kube_pod_container_status_restarts_total{namespace="jewelhub"} > 3
+      for: 1m
+      labels:
+        severity: warning
+        service: jewelhub
+      annotations:
+        summary: "JewelHub pod restarting too much!"
+        description: "Pod {{ $labels.pod }} has restarted more than 3 times"
+
+    # Alert 5 - Service Down
+    - alert: JewelHubServiceDown
+      expr: kube_deployment_status_replicas_available{namespace="jewelhub"} < 1
+      for: 1m
+      labels:
+        severity: critical
+        service: jewelhub
+      annotations:
+        summary: "JewelHub service has no running replicas!"
+        description: "Deployment {{ $labels.deployment }} has 0 available replicas"
