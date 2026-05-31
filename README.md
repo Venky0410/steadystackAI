@@ -10,3 +10,17 @@
 - [x] EKS Cluster v1.31
 - [x] Worker Nodes (t3.medium x2)
 - [x] kubectl configured
+
+
+### ✅ Phase 2 - Application
+- [x] JewelHub microservices deployed
+- [x] 6 services running on EKS
+- [x] Docker images in ECR
+
+### ✅ Phase 3 - Observability
+- [x] Prometheus installed on EKS
+- [x] Grafana installed on EKS
+- [x] JewelHub Overview dashboard
+- [x] Pod status monitoring
+- [x] CPU + Memory tracking
+- [x] Pod restart alerts
