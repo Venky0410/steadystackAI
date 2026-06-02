@@ -24,3 +24,13 @@
 - [x] Pod status monitoring
 - [x] CPU + Memory tracking
 - [x] Pod restart alerts
+
+### ✅ Phase 4 - CI/CD
+- [x] GitHub Actions pipeline
+- [x] Auto Docker build on push
+- [x] Auto push to AWS ECR
+- [x] Auto deploy to EKS
+- [x] Commit hash image tags
+- [x] Deployment summary in GitHub
+- [x] Rollback capability
+- [x] Zero manual steps!
