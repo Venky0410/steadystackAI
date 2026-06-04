@@ -168,6 +168,22 @@ jobs:
     if: github.event.inputs.action == 'destroy'
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Install kubectl
+      run: |
+        curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+
     - name: Delete Kubernetes Load Balancers first
       run: |
         aws eks update-kubeconfig \
@@ -206,7 +222,7 @@ jobs:
         echo "✅ All AWS resources deleted!" >> $GITHUB_STEP_SUMMARY
         echo "💰 No more charges!" >> $GITHUB_STEP_SUMMARY
         echo "**Destroyed at:** $(date)" >> $GITHUB_STEP_SUMMARY
-        
+
     - name: Display All URLs
       run: |
         chmod +x get-urls.sh
