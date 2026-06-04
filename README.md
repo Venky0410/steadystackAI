@@ -34,3 +34,11 @@
 - [x] Deployment summary in GitHub
 - [x] Rollback capability
 - [x] Zero manual steps!
+
+### ✅ Phase 5 - ELK Stack
+- [x] Elasticsearch installed
+- [x] Kibana installed
+- [x] Filebeat installed as DaemonSet
+- [x] JewelHub logs flowing
+- [x] Kibana data view created
+- [x] Log search working
