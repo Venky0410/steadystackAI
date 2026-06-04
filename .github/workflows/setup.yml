@@ -206,3 +206,8 @@ jobs:
         echo "✅ All AWS resources deleted!" >> $GITHUB_STEP_SUMMARY
         echo "💰 No more charges!" >> $GITHUB_STEP_SUMMARY
         echo "**Destroyed at:** $(date)" >> $GITHUB_STEP_SUMMARY
+        
+    - name: Display All URLs
+      run: |
+        chmod +x get-urls.sh
+        ./get-urls.sh
