@@ -102,10 +102,11 @@ jobs:
         helm upgrade --install kibana \
           elastic/kibana \
           --namespace logging \
-          --set resources.requests.memory=512Mi \
-          --set resources.limits.memory=1Gi \
+          --set resources.requests.memory=256Mi \
+          --set resources.limits.memory=512Mi \
           --set service.type=LoadBalancer \
-          --wait --timeout=10m
+          --timeout=15m \
+          --wait
 
     - name: Install Filebeat
       run: |
@@ -167,6 +168,16 @@ jobs:
     if: github.event.inputs.action == 'destroy'
 
     steps:
+    - name: Delete Kubernetes Load Balancers first
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ env.EKS_CLUSTER }} || true
+        kubectl delete svc --all -n jewelhub || true
+        kubectl delete svc --all -n monitoring || true
+        kubectl delete svc --all -n logging || true
+        echo "Waiting for Load Balancers to delete..."
+        sleep 90
     - name: Checkout code
       uses: actions/checkout@v3
 
