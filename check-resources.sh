@@ -10,9 +10,9 @@ echo ""
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-TOTAL_COST=0
+HOURLY_COST=0
 WARNINGS=0
 
 # =====================
@@ -30,7 +30,7 @@ else
   for cluster in $EKS_CLUSTERS; do
     echo -e "   ${RED}⚠️  Running: $cluster${NC}"
     echo "   💰 Cost: ~\$0.10/hour = \$2.40/day"
-    TOTAL_COST=$(echo "$TOTAL_COST + 0.10" | bc)
+    HOURLY_COST=$(awk "BEGIN {printf \"%.3f\", $HOURLY_COST + 0.10}")
     WARNINGS=$((WARNINGS + 1))
   done
 fi
@@ -44,23 +44,20 @@ echo "💻 EC2 Instances:"
 EC2_INSTANCES=$(aws ec2 describe-instances \
   --region eu-west-1 \
   --filters "Name=instance-state-name,Values=running" \
-  --query 'Reservations[*].Instances[*].[InstanceId,InstanceType,Tags[?Key==`Name`].Value]' \
+  --query 'Reservations[*].Instances[*].[InstanceId,InstanceType]' \
   --output text)
 
 if [ -z "$EC2_INSTANCES" ]; then
   echo -e "   ${GREEN}✅ No EC2 instances running${NC}"
 else
   echo -e "   ${RED}⚠️  Running instances:${NC}"
-  echo "$EC2_INSTANCES" | while read line; do
+  EC2_COUNT=0
+  while read line; do
     echo "   → $line"
-  done
-  EC2_COUNT=$(aws ec2 describe-instances \
-    --region eu-west-1 \
-    --filters "Name=instance-state-name,Values=running" \
-    --query 'Reservations[*].Instances[*].InstanceId' \
-    --output text | wc -w)
-  echo "   💰 Cost: ~\$0.047/hour each"
-  TOTAL_COST=$(echo "$TOTAL_COST + (0.047 * $EC2_COUNT)" | bc)
+    EC2_COUNT=$((EC2_COUNT + 1))
+    HOURLY_COST=$(awk "BEGIN {printf \"%.3f\", $HOURLY_COST + 0.047}")
+  done <<< "$EC2_INSTANCES"
+  echo "   💰 Cost: ~\$0.047/hour each ($EC2_COUNT instances)"
   WARNINGS=$((WARNINGS + 1))
 fi
 
@@ -80,11 +77,11 @@ if [ -z "$NAT_GATEWAYS" ]; then
   echo -e "   ${GREEN}✅ No NAT Gateways running${NC}"
 else
   echo -e "   ${RED}⚠️  Running:${NC}"
-  echo "$NAT_GATEWAYS" | while read line; do
+  while read line; do
     echo "   → $line"
-  done
+    HOURLY_COST=$(awk "BEGIN {printf \"%.3f\", $HOURLY_COST + 0.045}")
+  done <<< "$NAT_GATEWAYS"
   echo "   💰 Cost: ~\$0.045/hour = \$1.08/day"
-  TOTAL_COST=$(echo "$TOTAL_COST + 0.045" | bc)
   WARNINGS=$((WARNINGS + 1))
 fi
 
@@ -111,14 +108,14 @@ else
     echo -e "   ${YELLOW}⚠️  Classic LBs:${NC}"
     for lb in $CLASSIC_LBS; do
       echo "   → $lb"
-      TOTAL_COST=$(echo "$TOTAL_COST + 0.025" | bc)
+      HOURLY_COST=$(awk "BEGIN {printf \"%.3f\", $HOURLY_COST + 0.025}")
     done
   fi
   if [ ! -z "$ALB_LBS" ]; then
     echo -e "   ${YELLOW}⚠️  ALBs:${NC}"
     for lb in $ALB_LBS; do
       echo "   → $lb"
-      TOTAL_COST=$(echo "$TOTAL_COST + 0.025" | bc)
+      HOURLY_COST=$(awk "BEGIN {printf \"%.3f\", $HOURLY_COST + 0.025}")
     done
   fi
   echo "   💰 Cost: ~\$0.025/hour each"
@@ -144,7 +141,7 @@ else
   echo "$VPCS" | while read line; do
     echo "   → $line"
   done
-  echo "   💰 Cost: Free (VPC itself is free)"
+  echo "   💰 Cost: Free"
 fi
 
 echo ""
@@ -190,14 +187,12 @@ echo ""
 # =====================
 # COST SUMMARY
 # =====================
-echo "================================================"
-echo "💰 ESTIMATED HOURLY COST SUMMARY"
-echo "================================================"
+DAILY_COST=$(awk "BEGIN {printf \"%.2f\", $HOURLY_COST * 24}")
+MONTHLY_COST=$(awk "BEGIN {printf \"%.2f\", $HOURLY_COST * 24 * 30}")
 
-HOURLY_COST=$TOTAL_COST
-DAILY_COST=$(echo "$HOURLY_COST * 24" | bc)
-MONTHLY_COST=$(echo "$DAILY_COST * 30" | bc)
-
+echo "================================================"
+echo "💰 ESTIMATED COST SUMMARY"
+echo "================================================"
 echo "Per hour:  \$$HOURLY_COST"
 echo "Per day:   \$$DAILY_COST"
 echo "Per month: \$$MONTHLY_COST"
@@ -232,5 +227,5 @@ fi
 
 echo ""
 echo "================================================"
-echo "Run this script anytime: ./check-resources.sh"
+echo "Run anytime: ./check-resources.sh"
 echo "================================================"
