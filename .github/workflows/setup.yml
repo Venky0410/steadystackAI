@@ -1,0 +1,197 @@
+name: SteadyStackAI Platform Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'setup'
+        type: choice
+        options:
+          - setup
+          - destroy
+
+env:
+  AWS_REGION: eu-west-1
+  EKS_CLUSTER: steadystackai-cluster
+
+jobs:
+  setup:
+    name: Setup Everything
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'setup'
+
+    steps:
+    - name: Checkout SteadyStackAI
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+
+    - name: Terraform Apply
+      working-directory: infrastructure/terraform
+      run: |
+        terraform init
+        terraform apply -auto-approve
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ env.EKS_CLUSTER }}
+
+    - name: Install Helm
+      run: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+    - name: Add Helm repos
+      run: |
+        helm repo add prometheus-community \
+          https://prometheus-community.github.io/helm-charts
+        helm repo add elastic https://helm.elastic.co
+        helm repo update
+
+    - name: Create namespaces
+      run: |
+        kubectl create namespace monitoring \
+          --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace logging \
+          --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace jewelhub \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Install Prometheus and Grafana
+      run: |
+        helm upgrade --install prometheus \
+          prometheus-community/kube-prometheus-stack \
+          --namespace monitoring \
+          --set grafana.adminPassword=JewelHub@2025 \
+          --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+          --wait --timeout=10m
+
+    - name: Expose Grafana
+      run: |
+        kubectl patch svc prometheus-grafana \
+          -n monitoring \
+          -p '{"spec": {"type": "LoadBalancer"}}'
+
+    - name: Install Elasticsearch
+      run: |
+        helm upgrade --install elasticsearch \
+          elastic/elasticsearch \
+          --namespace logging \
+          --set replicas=1 \
+          --set minimumMasterNodes=1 \
+          --set resources.requests.memory=512Mi \
+          --set resources.limits.memory=1Gi \
+          --set persistence.enabled=false \
+          --wait --timeout=10m
+
+    - name: Install Kibana
+      run: |
+        helm upgrade --install kibana \
+          elastic/kibana \
+          --namespace logging \
+          --set resources.requests.memory=512Mi \
+          --set resources.limits.memory=1Gi \
+          --set service.type=LoadBalancer \
+          --wait --timeout=10m
+
+    - name: Install Filebeat
+      run: |
+        helm upgrade --install filebeat \
+          elastic/filebeat \
+          --namespace logging \
+          --wait --timeout=5m
+
+    - name: Apply Prometheus Alert Rules
+      run: |
+        kubectl apply -f \
+          observability/prometheus/jewelhub-alerts.yaml
+
+    - name: Deploy JewelHub
+      run: |
+        git clone https://github.com/Venky0410/JewelHub.git
+        cd JewelHub
+        find ./k8s -name "*.yaml" | xargs sed -i \
+          "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g"
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/product-service/
+        kubectl apply -f k8s/cart-service/
+        kubectl apply -f k8s/order-service/
+        kubectl apply -f k8s/user-service/
+        kubectl apply -f k8s/notification-service/
+        kubectl apply -f k8s/frontend/
+        echo "✅ JewelHub deployed!"
+
+    - name: Wait for Load Balancers
+      run: sleep 90
+
+    - name: Get All URLs
+      run: |
+        GRAFANA_URL=$(kubectl get svc prometheus-grafana \
+          -n monitoring \
+          -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+        KIBANA_URL=$(kubectl get svc kibana-kibana \
+          -n logging \
+          -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+        JEWELHUB_URL=$(kubectl get svc frontend \
+          -n jewelhub \
+          -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+        echo "## 🚀 SteadyStackAI Platform Ready!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Service | URL | Login |" >> $GITHUB_STEP_SUMMARY
+        echo "|---------|-----|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| 💍 JewelHub | http://$JEWELHUB_URL | - |" >> $GITHUB_STEP_SUMMARY
+        echo "| 📊 Grafana | http://$GRAFANA_URL | admin / JewelHub@2025 |" >> $GITHUB_STEP_SUMMARY
+        echo "| 📋 Kibana | http://$KIBANA_URL | elastic / check secret |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Setup completed at:** $(date)" >> $GITHUB_STEP_SUMMARY
+
+  destroy:
+    name: Destroy Everything
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'destroy'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+
+    - name: Terraform Destroy
+      working-directory: infrastructure/terraform
+      run: |
+        terraform init
+        terraform destroy -auto-approve
+
+    - name: Platform Destroyed
+      run: |
+        echo "## 💥 Platform Destroyed!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ All AWS resources deleted!" >> $GITHUB_STEP_SUMMARY
+        echo "💰 No more charges!" >> $GITHUB_STEP_SUMMARY
+        echo "**Destroyed at:** $(date)" >> $GITHUB_STEP_SUMMARY
