@@ -504,12 +504,13 @@ jobs:
           kubectl delete svc --all -n jewelhub || true
           kubectl delete svc --all -n monitoring || true
           kubectl delete svc --all -n logging || true
-          echo "Waiting for LBs to delete..."
-          sleep 90
+          echo "Waiting 120 seconds for LBs to delete..."
+          sleep 120
         else
           echo "⚠️ No EKS cluster found"
         fi
 
+        # Always delete ALL classic LBs
         echo "Deleting any remaining classic LBs..."
         aws elb describe-load-balancers \
           --region ${{ env.AWS_REGION }} \
@@ -522,9 +523,22 @@ jobs:
                 --region ${{ env.AWS_REGION }} || true
             fi
         done
-        echo "Waiting for LBs to fully delete..."
-        sleep 60
 
+        # Wait for LBs to fully delete
+        echo "Final wait 90 seconds..."
+        sleep 90
+
+        # Verify LBs gone
+        REMAINING=$(aws elb describe-load-balancers \
+          --region ${{ env.AWS_REGION }} \
+          --query 'LoadBalancerDescriptions[*].LoadBalancerName' \
+          --output text)
+        if [ ! -z "$REMAINING" ]; then
+          echo "⚠️ LBs still deleting, waiting 60 more seconds..."
+          sleep 60
+        fi
+        echo "✅ All LBs deleted!"
+ 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
