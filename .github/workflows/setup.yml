@@ -322,12 +322,13 @@ jobs:
           --namespace logging \
           --set replicas=1 \
           --set minimumMasterNodes=1 \
-          --set resources.requests.memory=256Mi \
-          --set resources.limits.memory=512Mi \
-          --set resources.requests.cpu=100m \
-          --set resources.limits.cpu=300m \
-          --set esJavaOpts="-Xmx256m -Xms256m" \
+          --set resources.requests.memory=128Mi \
+          --set resources.limits.memory=256Mi \
+          --set resources.requests.cpu=50m \
+          --set resources.limits.cpu=200m \
+          --set esJavaOpts="-Xmx128m -Xms128m" \
           --set persistence.enabled=false
+
 
         helm upgrade --install kibana \
           elastic/kibana \
