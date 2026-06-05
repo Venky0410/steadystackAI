@@ -36,9 +36,11 @@
 - [x] Zero manual steps!
 
 ### ✅ Phase 5 - ELK Stack
-- [x] Elasticsearch installed
+- [x] Elasticsearch installed (2Gi memory)
 - [x] Kibana installed
 - [x] Filebeat installed as DaemonSet
 - [x] JewelHub logs flowing
 - [x] Kibana data view created
 - [x] Log search working
+- [x] Fixed OOMKilled with proper memory settings
+
