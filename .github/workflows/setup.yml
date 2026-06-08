@@ -330,31 +330,35 @@ jobs:
         kubectl rollout status statefulset/elasticsearch-master \
           -n logging --timeout=20m
 
-        echo "⏳ Waiting for Elasticsearch to be ready..."
+        echo "⏳ Waiting for pod ready condition..."
         kubectl wait pod/elasticsearch-master-0 \
           --for=condition=ready \
           --namespace=logging \
           --timeout=10m
 
-        echo "⏳ Extra safety wait..."
+        echo "⏳ Safety wait 120 seconds..."
         sleep 120
-
         echo "✅ Elasticsearch ready!"
 
     - name: Install Kibana
       run: |
+        # Clean up any failed pre/post install jobs
+        kubectl delete jobs \
+          -n logging \
+          -l app=kibana --force 2>/dev/null || true
+
+        # Install Kibana with HTTPS settings
         helm upgrade --install kibana \
           elastic/kibana \
           --namespace logging \
           --set resources.requests.memory=256Mi \
           --set resources.limits.memory=1Gi \
           --set service.type=LoadBalancer \
-          --set elasticsearchHosts="https://elasticsearch-master:9200" \
-          --set elasticsearch.ssl.verificationMode=none
+          --set "elasticsearchHosts=https://elasticsearch-master:9200" \
+          --set "elasticsearch.ssl.verificationMode=none" \
+          --timeout=10m \
+          --wait
 
-        echo "⏳ Waiting for Kibana..."
-        kubectl rollout status deployment/kibana-kibana \
-          -n logging --timeout=10m
         echo "✅ Kibana ready!"
 
     - name: Install Filebeat
