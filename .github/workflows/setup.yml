@@ -325,12 +325,22 @@ jobs:
           --set resources.limits.cpu=1000m \
           --set esJavaOpts="-Xmx1g -Xms1g" \
           --set persistence.enabled=false
-        echo "⏳ Waiting for Elasticsearch..."
+
+        echo "⏳ Waiting for Elasticsearch pod to start..."
         kubectl rollout status statefulset/elasticsearch-master \
           -n logging --timeout=20m
-        echo "⏳ Extra wait for health checks..."
-        sleep 60
-        echo "✅ Elasticsearch ready!"
+
+        echo "⏳ Waiting for Elasticsearch to be healthy..."
+        until kubectl exec \
+          -n logging \
+          elasticsearch-master-0 \
+          -- curl -s http://localhost:9200/_cluster/health \
+          | grep -q '"status":"green"\|"status":"yellow"'; do
+          echo "Elasticsearch not ready yet, waiting 15 seconds..."
+          sleep 15
+        done
+
+        echo "✅ Elasticsearch is healthy and ready!"
 
     - name: Install Kibana
       run: |
