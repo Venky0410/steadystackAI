@@ -316,55 +316,46 @@ jobs:
       run: |
         helm upgrade --install elasticsearch \
           elastic/elasticsearch \
+          --version 7.17.3 \
           --namespace logging \
           --set replicas=1 \
           --set minimumMasterNodes=1 \
           --set resources.requests.memory=512Mi \
           --set resources.limits.memory=2Gi \
-          --set resources.requests.cpu=100m \
-          --set resources.limits.cpu=1000m \
           --set esJavaOpts="-Xmx1g -Xms1g" \
           --set persistence.enabled=false
 
-        echo "⏳ Waiting for Elasticsearch pod..."
-        kubectl rollout status statefulset/elasticsearch-master \
-          -n logging --timeout=20m
-
-        echo "⏳ Waiting for pod ready condition..."
+        echo "⏳ Waiting for Elasticsearch..."
         kubectl wait pod/elasticsearch-master-0 \
           --for=condition=ready \
-          --namespace=logging \
-          --timeout=10m
+          -n logging \
+          --timeout=15m
 
-        echo "⏳ Safety wait 120 seconds..."
+        echo "⏳ Extra wait 2 mins..."
         sleep 120
         echo "✅ Elasticsearch ready!"
 
     - name: Install Kibana
       run: |
-        # Clean up any failed pre/post install jobs
-        kubectl delete jobs \
-          -n logging \
-          -l app=kibana --force 2>/dev/null || true
-
-        # Install Kibana with HTTPS settings
         helm upgrade --install kibana \
           elastic/kibana \
+          --version 7.17.3 \
           --namespace logging \
           --set resources.requests.memory=256Mi \
           --set resources.limits.memory=1Gi \
           --set service.type=LoadBalancer \
-          --set "elasticsearchHosts=https://elasticsearch-master:9200" \
-          --set "elasticsearch.ssl.verificationMode=none" \
-          --timeout=10m \
-          --wait
+          --set elasticsearchHosts="http://elasticsearch-master:9200"
 
+        echo "⏳ Waiting for Kibana..."
+        kubectl rollout status deployment/kibana-kibana \
+          -n logging --timeout=10m
         echo "✅ Kibana ready!"
 
     - name: Install Filebeat
       run: |
         helm upgrade --install filebeat \
           elastic/filebeat \
+          --version 7.17.3 \
           --namespace logging
         echo "✅ Filebeat ready!"
     - name: Get Kibana URL
