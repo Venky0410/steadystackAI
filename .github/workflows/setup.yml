@@ -373,9 +373,8 @@ jobs:
           --set resources.limits.memory=1Gi \
           --set service.type=LoadBalancer \
           --set elasticsearchHosts="http://elasticsearch-master:9200" \
-          --set image.repository=$ECR_URL/kibana-cache \
-          --set image.tag=7.17.3
-
+          --set "image=$ECR_URL/kibana-cache" \
+          --set "imageTag=7.17.3"
         echo "⏳ Waiting for Kibana..."
         kubectl rollout status deployment/kibana-kibana \
           -n logging --timeout=10m
