@@ -57,12 +57,7 @@ if [ -z "$KIBANA" ]; then
 else
   echo "   http://$KIBANA:5601"
   # Get Kibana password
-  KIBANA_PASS=$(kubectl get secret \
-    elasticsearch-master-credentials \
-    -n logging \
-    -o jsonpath='{.data.password}' \
-    2>/dev/null | base64 --decode)
-  echo "   Login: elastic / $KIBANA_PASS"
+  echo "   Login: No login required (v7.17.3)"
 fi
 
 echo ""

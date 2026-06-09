@@ -399,10 +399,6 @@ jobs:
         KIBANA_URL=$(kubectl get svc kibana-kibana \
           -n logging \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-        KIBANA_PASS=$(kubectl get secret \
-          elasticsearch-master-credentials \
-          -n logging \
-          -o jsonpath='{.data.password}' | base64 --decode)
         echo "## 📋 ELK Stack Ready!" >> $GITHUB_STEP_SUMMARY
         echo "| Service | URL | Login |" >> $GITHUB_STEP_SUMMARY
         echo "|---------|-----|-------|" >> $GITHUB_STEP_SUMMARY
