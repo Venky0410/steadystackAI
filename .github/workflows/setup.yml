@@ -318,7 +318,6 @@ jobs:
           --query Account --output text)
         ECR_URL="$ACCOUNT_ID.dkr.ecr.eu-west-1.amazonaws.com"
 
-        # Login to ECR
         aws ecr get-login-password \
           --region eu-west-1 | \
           docker login --username AWS \
@@ -337,33 +336,40 @@ jobs:
           --set "image=$ECR_URL/elasticsearch-cache" \
           --set "imageTag=7.17.3"
 
-        echo "⏳ Waiting for Elasticsearch pod..."
-        kubectl wait pod/elasticsearch-master-0 \
-          --for=condition=ready \
+        echo "⏳ Waiting for Elasticsearch pod to be ready..."
+        until kubectl get pod elasticsearch-master-0 \
           -n logging \
-          --timeout=15m
-
-        echo "⏳ Verifying Elasticsearch API..."
-        for i in {1..20}; do
-          STATUS=$(kubectl exec \
-            -n logging \
-            elasticsearch-master-0 \
-            -- curl -s -o /dev/null \
-            -w "%{http_code}" \
-            http://localhost:9200 2>/dev/null)
-          echo "Attempt $i: HTTP $STATUS"
-          if [ "$STATUS" = "200" ]; then
-            echo "✅ Elasticsearch API ready!"
-            break
-          fi
-          sleep 15
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' \
+          2>/dev/null | grep -q "True"; do
+          echo "Pod not ready yet..."
+          sleep 10
         done
+        echo "✅ Pod is ready!"
+
+        echo "⏳ Waiting for Elasticsearch API to respond..."
+        until kubectl exec \
+          -n logging \
+          elasticsearch-master-0 \
+          -- curl -s \
+          http://localhost:9200 \
+          2>/dev/null | grep -q "You Know, for Search"; do
+          echo "API not ready yet..."
+          sleep 10
+        done
+        echo "✅ Elasticsearch API ready!"
 
     - name: Install Kibana
       run: |
         ACCOUNT_ID=$(aws sts get-caller-identity \
           --query Account --output text)
         ECR_URL="$ACCOUNT_ID.dkr.ecr.eu-west-1.amazonaws.com"
+
+        # Clean old failed hook jobs
+        kubectl delete jobs \
+          -n logging \
+          --field-selector status.successful=0 \
+          2>/dev/null || true
+        sleep 5
 
         helm upgrade --install kibana \
           elastic/kibana \
@@ -375,9 +381,15 @@ jobs:
           --set elasticsearchHosts="http://elasticsearch-master:9200" \
           --set "image=$ECR_URL/kibana-cache" \
           --set "imageTag=7.17.3"
-        echo "⏳ Waiting for Kibana..."
-        kubectl rollout status deployment/kibana-kibana \
-          -n logging --timeout=10m
+
+        echo "⏳ Waiting for Kibana to be ready..."
+        until kubectl get deployment kibana-kibana \
+          -n logging \
+          -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
+          2>/dev/null | grep -q "True"; do
+          echo "Kibana not ready yet..."
+          sleep 10
+        done
         echo "✅ Kibana ready!"
 
     - name: Install Filebeat
@@ -392,8 +404,16 @@ jobs:
           --namespace logging \
           --set "image=$ECR_URL/filebeat-cache" \
           --set "imageTag=7.17.3"
-        echo "✅ Filebeat ready!"
-    - name: Get Kibana URL
+
+        echo "⏳ Waiting for Filebeat daemonset..."
+        until kubectl get daemonset filebeat-filebeat \
+          -n logging \
+          -o jsonpath='{.status.numberReady}' \
+          2>/dev/null | grep -qv "^0$\|^$"; do
+          echo "Filebeat not ready yet..."
+          sleep 10
+        done
+        echo "✅ Filebeat ready!"    - name: Get Kibana URL
       run: |
         sleep 60
         KIBANA_URL=$(kubectl get svc kibana-kibana \
