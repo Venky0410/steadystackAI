@@ -334,8 +334,8 @@ jobs:
           --set resources.limits.memory=2Gi \
           --set esJavaOpts="-Xmx1g -Xms1g" \
           --set persistence.enabled=false \
-          --set image.repository=$ECR_URL/elasticsearch-cache \
-          --set image.tag=7.17.3
+          --set "image=$ECR_URL/elasticsearch-cache" \
+          --set "imageTag=7.17.3"
 
         echo "⏳ Waiting for Elasticsearch pod..."
         kubectl wait pod/elasticsearch-master-0 \
@@ -391,8 +391,8 @@ jobs:
           elastic/filebeat \
           --version 7.17.3 \
           --namespace logging \
-          --set image.repository=$ECR_URL/filebeat-cache \
-          --set image.tag=7.17.3
+          --set "image=$ECR_URL/filebeat-cache" \
+          --set "imageTag=7.17.3"
         echo "✅ Filebeat ready!"
     - name: Get Kibana URL
       run: |
