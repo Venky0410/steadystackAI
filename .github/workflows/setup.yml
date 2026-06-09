@@ -413,7 +413,8 @@ jobs:
           echo "Filebeat not ready yet..."
           sleep 10
         done
-        echo "✅ Filebeat ready!"    - name: Get Kibana URL
+        echo "✅ Filebeat ready!"
+    - name: Get Kibana URL
       run: |
         sleep 60
         KIBANA_URL=$(kubectl get svc kibana-kibana \
