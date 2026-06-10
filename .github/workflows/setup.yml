@@ -148,21 +148,39 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
         cd JewelHub
-        for service in \
-          product-service \
-          cart-service \
-          order-service \
-          user-service \
-          notification-service \
-          frontend; do
-          echo "Building $service..."
-          docker build \
-            -t $ECR_REGISTRY/jewelhub-$service:${{ env.IMAGE_TAG }} \
-            ./$service
-          docker push \
-            $ECR_REGISTRY/jewelhub-$service:${{ env.IMAGE_TAG }}
-          echo "✅ $service pushed!"
-        done
+
+        # Check if image already exists in ECR
+        IMAGE_EXISTS=$(aws ecr describe-images \
+          --repository-name jewelhub-frontend \
+          --image-ids imageTag=${{ env.IMAGE_TAG }} \
+          --region eu-west-1 \
+          --query 'imageDetails[0].imageTags[0]' \
+          --output text 2>/dev/null || echo "NOT_FOUND")
+
+        if [ "$IMAGE_EXISTS" = "${{ env.IMAGE_TAG }}" ]; then
+          echo "✅ Images already exist for tag ${{ env.IMAGE_TAG }}"
+          echo "⏭️ Skipping build and push!"
+          echo "SKIP_BUILD=true" >> $GITHUB_ENV
+        else
+          echo "🔨 New code detected! Building images..."
+          echo "SKIP_BUILD=false" >> $GITHUB_ENV
+
+          for service in \
+            product-service \
+            cart-service \
+            order-service \
+            user-service \
+            notification-service \
+            frontend; do
+            echo "Building $service..."
+            docker build \
+              -t $ECR_REGISTRY/jewelhub-$service:${{ env.IMAGE_TAG }} \
+              ./$service
+            docker push \
+              $ECR_REGISTRY/jewelhub-$service:${{ env.IMAGE_TAG }}
+            echo "✅ $service pushed!"
+          done
+        fi
 
     - name: Deploy JewelHub
       env:
