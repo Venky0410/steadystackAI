@@ -203,7 +203,23 @@ jobs:
         echo "✅ JewelHub deployed!"
 
     - name: Wait for Load Balancers
-      run: sleep 90
+      run: |
+        echo "⏳ Waiting for all Load Balancer URLs..."
+        for svc in \
+          "prometheus-grafana monitoring" \
+          "frontend jewelhub" \
+          "kibana-kibana logging"; do
+          name=$(echo $svc | cut -d' ' -f1)
+          ns=$(echo $svc | cut -d' ' -f2)
+          until kubectl get svc $name \
+            -n $ns \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+            2>/dev/null | grep -q "elb.amazonaws.com"; do
+            echo "$name URL not ready yet..."
+            sleep 15
+          done
+          echo "✅ $name URL ready!"
+        done
 
     - name: Get All URLs
       run: |
@@ -563,7 +579,14 @@ jobs:
 
     - name: Get JewelHub URL
       run: |
-        sleep 60
+        echo "⏳ Waiting for Load Balancer URL..."
+        until kubectl get svc frontend \
+          -n jewelhub \
+          -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+          2>/dev/null | grep -q "elb.amazonaws.com"; do
+          echo "URL not ready yet..."
+          sleep 15
+        done
         URL=$(kubectl get svc frontend \
           -n jewelhub \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
