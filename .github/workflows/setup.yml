@@ -514,8 +514,15 @@ jobs:
         kubectl apply -f k8s/user-service/
         kubectl apply -f k8s/notification-service/
         kubectl apply -f k8s/frontend/
-        kubectl rollout status deployment/frontend \
-          -n jewelhub --timeout=5m
+        echo "⏳ Waiting for JewelHub to be ready..."
+        until kubectl get deployment frontend \
+          -n jewelhub \
+          -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
+          2>/dev/null | grep -q "True"; do
+          echo "Frontend not ready yet..."
+          sleep 15
+        done
+        echo "✅ JewelHub ready!"
         echo "✅ JewelHub deployed with tag: ${{ env.IMAGE_TAG }}"
 
     - name: Get JewelHub URL
