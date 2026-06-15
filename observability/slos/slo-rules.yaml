@@ -1,0 +1,150 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: jewelhub-slo-rules
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    release: prometheus
+spec:
+  groups:
+  # =====================
+  # AVAILABILITY SLO
+  # =====================
+  - name: jewelhub.availability.slo
+    interval: 30s
+    rules:
+    # Total requests
+    - record: jewelhub:requests:total5m
+      expr: |
+        sum(rate(http_requests_total{
+          namespace="jewelhub"
+        }[5m]))
+
+    # Successful requests (2xx 3xx)
+    - record: jewelhub:requests:success5m
+      expr: |
+        sum(rate(http_requests_total{
+          namespace="jewelhub",
+          status=~"2..|3.."
+        }[5m]))
+
+    # Availability ratio
+    - record: jewelhub:availability:ratio5m
+      expr: |
+        jewelhub:requests:success5m
+        /
+        jewelhub:requests:total5m
+
+    # 1 hour availability
+    - record: jewelhub:availability:ratio1h
+      expr: |
+        sum(rate(http_requests_total{
+          namespace="jewelhub",
+          status=~"2..|3.."
+        }[1h]))
+        /
+        sum(rate(http_requests_total{
+          namespace="jewelhub"
+        }[1h]))
+
+    # 24 hour availability
+    - record: jewelhub:availability:ratio24h
+      expr: |
+        sum(rate(http_requests_total{
+          namespace="jewelhub",
+          status=~"2..|3.."
+        }[24h]))
+        /
+        sum(rate(http_requests_total{
+          namespace="jewelhub"
+        }[24h]))
+
+  # =====================
+  # LATENCY SLO
+  # =====================
+  - name: jewelhub.latency.slo
+    interval: 30s
+    rules:
+    # Requests under 200ms
+    - record: jewelhub:latency:under200ms5m
+      expr: |
+        sum(rate(http_request_duration_seconds_bucket{
+          namespace="jewelhub",
+          le="0.2"
+        }[5m]))
+        /
+        sum(rate(http_request_duration_seconds_count{
+          namespace="jewelhub"
+        }[5m]))
+
+    # P50 latency
+    - record: jewelhub:latency:p50
+      expr: |
+        histogram_quantile(0.50,
+          sum(rate(http_request_duration_seconds_bucket{
+            namespace="jewelhub"
+          }[5m])) by (le))
+
+    # P95 latency
+    - record: jewelhub:latency:p95
+      expr: |
+        histogram_quantile(0.95,
+          sum(rate(http_request_duration_seconds_bucket{
+            namespace="jewelhub"
+          }[5m])) by (le))
+
+    # P99 latency
+    - record: jewelhub:latency:p99
+      expr: |
+        histogram_quantile(0.99,
+          sum(rate(http_request_duration_seconds_bucket{
+            namespace="jewelhub"
+          }[5m])) by (le))
+
+  # =====================
+  # ERROR BUDGET
+  # =====================
+  - name: jewelhub.error.budget
+    interval: 30s
+    rules:
+    # Error budget remaining (availability)
+    - record: jewelhub:error_budget:remaining
+      expr: |
+        1 - (
+          (1 - jewelhub:availability:ratio1h)
+          /
+          (1 - 0.999)
+        )
+
+    # Error budget consumed %
+    - record: jewelhub:error_budget:consumed
+      expr: |
+        (1 - jewelhub:error_budget:remaining) * 100
+
+  # =====================
+  # BURN RATE
+  # =====================
+  - name: jewelhub.burn.rate
+    interval: 30s
+    rules:
+    # 1 hour burn rate
+    - record: jewelhub:burn_rate:1h
+      expr: |
+        (1 - jewelhub:availability:ratio1h)
+        /
+        (1 - 0.999)
+
+    # 6 hour burn rate
+    - record: jewelhub:burn_rate:6h
+      expr: |
+        (1 - sum(rate(http_requests_total{
+          namespace="jewelhub",
+          status=~"2..|3.."
+        }[6h]))
+        /
+        sum(rate(http_requests_total{
+          namespace="jewelhub"
+        }[6h])))
+        /
+        (1 - 0.999)

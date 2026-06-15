@@ -1,0 +1,107 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: jewelhub-burn-rate-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    release: prometheus
+spec:
+  groups:
+  - name: jewelhub.burn.rate.alerts
+    rules:
+
+    # =====================
+    # CRITICAL - Fast Burn
+    # Consuming budget 14x faster
+    # = budget gone in 2 days!
+    # =====================
+    - alert: JewelHubFastBurnRate
+      expr: jewelhub:burn_rate:1h > 14
+      for: 2m
+      labels:
+        severity: critical
+        slo: availability
+      annotations:
+        summary: "JewelHub burning error budget too fast!"
+        description: |
+          JewelHub is consuming error budget
+          14x faster than allowed!
+          At this rate budget will be
+          exhausted in 2 days.
+          Current burn rate: {{ $value }}x
+
+    # =====================
+    # WARNING - Slow Burn
+    # Consuming budget 6x faster
+    # = budget gone in 5 days!
+    # =====================
+    - alert: JewelHubSlowBurnRate
+      expr: jewelhub:burn_rate:6h > 6
+      for: 15m
+      labels:
+        severity: warning
+        slo: availability
+      annotations:
+        summary: "JewelHub error budget burning!"
+        description: |
+          JewelHub is consuming error budget
+          6x faster than allowed!
+          At this rate budget will be
+          exhausted in 5 days.
+          Current burn rate: {{ $value }}x
+
+    # =====================
+    # ERROR BUDGET ALERTS
+    # =====================
+    - alert: JewelHubErrorBudgetLow
+      expr: jewelhub:error_budget:remaining < 0.25
+      for: 5m
+      labels:
+        severity: warning
+        slo: availability
+      annotations:
+        summary: "JewelHub error budget below 25%!"
+        description: |
+          Only {{ $value | humanizePercentage }}
+          of error budget remaining this month!
+
+    - alert: JewelHubErrorBudgetCritical
+      expr: jewelhub:error_budget:remaining < 0.10
+      for: 5m
+      labels:
+        severity: critical
+        slo: availability
+      annotations:
+        summary: "JewelHub error budget below 10%!"
+        description: |
+          Only {{ $value | humanizePercentage }}
+          of error budget remaining!
+          Freeze all deployments immediately!
+
+    # =====================
+    # LATENCY SLO ALERTS
+    # =====================
+    - alert: JewelHubLatencySLOBreach
+      expr: jewelhub:latency:p95 > 0.2
+      for: 5m
+      labels:
+        severity: warning
+        slo: latency
+      annotations:
+        summary: "JewelHub P95 latency above 200ms!"
+        description: |
+          P95 latency is {{ $value }}s
+          which breaches our 200ms SLO target!
+
+    - alert: JewelHubLatencyCritical
+      expr: jewelhub:latency:p99 > 1
+      for: 5m
+      labels:
+        severity: critical
+        slo: latency
+      annotations:
+        summary: "JewelHub P99 latency above 1 second!"
+        description: |
+          P99 latency is {{ $value }}s
+          Severe latency issue detected!

@@ -88,6 +88,16 @@ jobs:
           -n monitoring \
           -p '{"spec": {"type": "LoadBalancer"}}'
 
+    - name: Apply Alert Rules
+      run: |
+        kubectl apply -f \
+          observability/prometheus/jewelhub-alerts.yaml
+        kubectl apply -f \
+          observability/slos/slo-rules.yaml
+        kubectl apply -f \
+          observability/slos/burn-rate-alerts.yaml
+        echo "✅ All rules applied!"
+
     - name: Install Elasticsearch
       run: |
         kubectl delete namespace logging \
