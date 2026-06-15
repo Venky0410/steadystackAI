@@ -1,0 +1,240 @@
+{
+  "title": "JewelHub SLO Dashboard",
+  "uid": "jewelhub-slo",
+  "tags": ["jewelhub", "slo"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "🎯 Availability SLO (Target: 99.9%)",
+      "type": "gauge",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0.99,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "yellow", "value": 0.999},
+              {"color": "green", "value": 0.9995}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "jewelhub:availability:ratio1h",
+          "legendFormat": "Availability"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "🔥 Error Budget Remaining",
+      "type": "gauge",
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "yellow", "value": 0.25},
+              {"color": "green", "value": 0.50}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "jewelhub:error_budget:remaining",
+          "legendFormat": "Budget Remaining"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "⚡ Burn Rate (1h)",
+      "type": "gauge",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 20,
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 6},
+              {"color": "red", "value": 14}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "jewelhub:burn_rate:1h",
+          "legendFormat": "Burn Rate"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "📊 Error Budget Consumed %",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 50},
+              {"color": "red", "value": 75}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "jewelhub:error_budget:consumed",
+          "legendFormat": "Consumed"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "📈 Availability Over Time",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2
+          },
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "green", "value": 0.999}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "jewelhub:availability:ratio5m",
+          "legendFormat": "5m Availability"
+        },
+        {
+          "expr": "jewelhub:availability:ratio1h",
+          "legendFormat": "1h Availability"
+        },
+        {
+          "expr": "vector(0.999)",
+          "legendFormat": "SLO Target (99.9%)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "⏱️ Latency Percentiles",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "jewelhub:latency:p50",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "jewelhub:latency:p95",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "jewelhub:latency:p99",
+          "legendFormat": "P99"
+        },
+        {
+          "expr": "vector(0.2)",
+          "legendFormat": "SLO Target (200ms)"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "🔥 Burn Rate Over Time",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2
+          },
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 6},
+              {"color": "red", "value": 14}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "jewelhub:burn_rate:1h",
+          "legendFormat": "1h Burn Rate"
+        },
+        {
+          "expr": "jewelhub:burn_rate:6h",
+          "legendFormat": "6h Burn Rate"
+        },
+        {
+          "expr": "vector(14)",
+          "legendFormat": "Critical Threshold (14x)"
+        },
+        {
+          "expr": "vector(6)",
+          "legendFormat": "Warning Threshold (6x)"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "📊 Request Rate by Service",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{namespace='jewelhub'}[5m])) by (service)",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  }
+}

@@ -96,7 +96,9 @@ jobs:
           observability/slos/slo-rules.yaml
         kubectl apply -f \
           observability/slos/burn-rate-alerts.yaml
-        echo "✅ All rules applied!"
+        kubectl apply -f \
+          observability/grafana/slo-dashboard-configmap.yaml
+        echo "✅ All rules and dashboards applied!"
 
     - name: Install Elasticsearch
       run: |
