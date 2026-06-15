@@ -88,40 +88,84 @@ jobs:
           -n monitoring \
           -p '{"spec": {"type": "LoadBalancer"}}'
 
-    - name: Install ELK Stack
+    - name: Install Elasticsearch
       run: |
+        kubectl delete namespace logging \
+          --force 2>/dev/null || true
+        kubectl wait \
+          --for=delete namespace/logging \
+          --timeout=60s 2>/dev/null || true
+        kubectl create namespace logging
+
         helm upgrade --install elasticsearch \
           elastic/elasticsearch \
+          --version 7.17.3 \
           --namespace logging \
           --set replicas=1 \
           --set minimumMasterNodes=1 \
-          --set resources.requests.memory=256Mi \
-          --set resources.limits.memory=512Mi \
-          --set resources.requests.cpu=100m \
-          --set resources.limits.cpu=300m \
-          --set esJavaOpts="-Xmx256m -Xms256m" \
+          --set resources.requests.memory=512Mi \
+          --set resources.limits.memory=2Gi \
+          --set esJavaOpts="-Xmx1g -Xms1g" \
           --set persistence.enabled=false
+
+        until kubectl get pod elasticsearch-master-0 \
+          -n logging \
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' \
+          2>/dev/null | grep -q "True"; do
+          echo "Pod not ready yet..."
+          sleep 10
+        done
+
+        until kubectl exec \
+          -n logging elasticsearch-master-0 \
+          -- curl -s http://localhost:9200 \
+          2>/dev/null | grep -q "You Know, for Search"; do
+          echo "API not ready yet..."
+          sleep 10
+        done
+        echo "✅ Elasticsearch ready!"
+
+    - name: Install Kibana
+      run: |
+        kubectl delete jobs -n logging \
+          --field-selector status.successful=0 \
+          2>/dev/null || true
+        sleep 5
 
         helm upgrade --install kibana \
           elastic/kibana \
+          --version 7.17.3 \
           --namespace logging \
+          --no-hooks \
           --set resources.requests.memory=256Mi \
-          --set resources.limits.memory=512Mi \
-          --set service.type=LoadBalancer
+          --set resources.limits.memory=1Gi \
+          --set service.type=LoadBalancer \
+          --set elasticsearchHosts="http://elasticsearch-master:9200"
 
+        until kubectl get deployment kibana-kibana \
+          -n logging \
+          -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
+          2>/dev/null | grep -q "True"; do
+          echo "Kibana not ready yet..."
+          sleep 10
+        done
+        echo "✅ Kibana ready!"
+
+    - name: Install Filebeat
+      run: |
         helm upgrade --install filebeat \
           elastic/filebeat \
+          --version 7.17.3 \
           --namespace logging
 
-        echo "⏳ Waiting for Elasticsearch..."
-        kubectl rollout status statefulset/elasticsearch-master \
-          -n logging --timeout=20m
-
-        echo "⏳ Waiting for Kibana..."
-        kubectl rollout status deployment/kibana-kibana \
-          -n logging --timeout=10m
-
-        echo "✅ ELK Stack ready!"
+        until kubectl get daemonset filebeat-filebeat \
+          -n logging \
+          -o jsonpath='{.status.numberReady}' \
+          2>/dev/null | grep -qv "^0$\|^$"; do
+          echo "Filebeat not ready yet..."
+          sleep 10
+        done
+        echo "✅ Filebeat ready!"
 
     - name: Apply Alert Rules
       run: |
