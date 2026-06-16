@@ -11,5 +11,179 @@ data:
       "title": "JewelHub SLO Dashboard",
       "uid": "jewelhub-slo",
       "tags": ["jewelhub", "slo"],
-      "panels": []
+      "timezone": "browser",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Availability SLO (Target 99.9%)",
+          "type": "gauge",
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0},
+          "datasource": {"type": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 0.995},
+                  {"color": "green", "value": 0.999}
+                ]
+              }
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "showThresholdLabels": true,
+            "showThresholdMarkers": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "jewelhub:availability:ratio1h",
+              "legendFormat": "Availability"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Error Budget Remaining",
+          "type": "gauge",
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0},
+          "datasource": {"type": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 0.25},
+                  {"color": "green", "value": 0.50}
+                ]
+              }
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "jewelhub:error_budget:remaining",
+              "legendFormat": "Budget Remaining"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Burn Rate 1h",
+          "type": "gauge",
+          "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+          "datasource": {"type": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 20,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 6},
+                  {"color": "red", "value": 14}
+                ]
+              }
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "jewelhub:burn_rate:1h",
+              "legendFormat": "Burn Rate"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Availability Over Time",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "datasource": {"type": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "jewelhub:availability:ratio5m",
+              "legendFormat": "5m Availability"
+            },
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "jewelhub:availability:ratio1h",
+              "legendFormat": "1h Availability"
+            },
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "vector(0.999)",
+              "legendFormat": "SLO Target 99.9%"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Latency Percentiles",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "datasource": {"type": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            }
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "jewelhub:latency:p50",
+              "legendFormat": "P50"
+            },
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "jewelhub:latency:p95",
+              "legendFormat": "P95"
+            },
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "jewelhub:latency:p99",
+              "legendFormat": "P99"
+            },
+            {
+              "datasource": {"type": "prometheus"},
+              "expr": "vector(0.2)",
+              "legendFormat": "SLO Target 200ms"
+            }
+          ]
+        }
+      ]
     }
