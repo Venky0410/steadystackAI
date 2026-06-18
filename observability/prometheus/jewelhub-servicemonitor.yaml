@@ -11,8 +11,7 @@ spec:
     matchNames:
       - jewelhub
   selector:
-    matchLabels:
-      app: frontend
+    matchLabels: {}  # ← match ALL services in jewelhub namespace
   endpoints:
   - port: http
     path: /metrics
