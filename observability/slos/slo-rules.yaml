@@ -17,48 +17,41 @@ spec:
     # Total requests
     - record: jewelhub:requests:total5m
       expr: |
-        sum(rate(http_requests_total{
-          namespace="jewelhub"
-        }[5m]))
+        sum(rate(flask_http_request_total[5m]))
 
-    # Successful requests (2xx 3xx)
+    # Successful requests (2xx)
     - record: jewelhub:requests:success5m
       expr: |
-        sum(rate(http_requests_total{
-          namespace="jewelhub",
-          status=~"2..|3.."
+        sum(rate(flask_http_request_total{
+          status=~"2.."
         }[5m]))
 
-    # Availability ratio
+    # Availability ratio 5m
     - record: jewelhub:availability:ratio5m
       expr: |
-        jewelhub:requests:success5m
+        sum(rate(flask_http_request_total{
+          status=~"2.."
+        }[5m]))
         /
-        jewelhub:requests:total5m
+        sum(rate(flask_http_request_total[5m]))
 
-    # 1 hour availability
+    # Availability ratio 1h
     - record: jewelhub:availability:ratio1h
       expr: |
-        sum(rate(http_requests_total{
-          namespace="jewelhub",
-          status=~"2..|3.."
+        sum(rate(flask_http_request_total{
+          status=~"2.."
         }[1h]))
         /
-        sum(rate(http_requests_total{
-          namespace="jewelhub"
-        }[1h]))
+        sum(rate(flask_http_request_total[1h]))
 
-    # 24 hour availability
+    # Availability ratio 24h
     - record: jewelhub:availability:ratio24h
       expr: |
-        sum(rate(http_requests_total{
-          namespace="jewelhub",
-          status=~"2..|3.."
+        sum(rate(flask_http_request_total{
+          status=~"2.."
         }[24h]))
         /
-        sum(rate(http_requests_total{
-          namespace="jewelhub"
-        }[24h]))
+        sum(rate(flask_http_request_total[24h]))
 
   # =====================
   # LATENCY SLO
@@ -69,38 +62,35 @@ spec:
     # Requests under 200ms
     - record: jewelhub:latency:under200ms5m
       expr: |
-        sum(rate(http_request_duration_seconds_bucket{
-          namespace="jewelhub",
+        sum(rate(flask_http_request_duration_seconds_bucket{
           le="0.2"
         }[5m]))
         /
-        sum(rate(http_request_duration_seconds_count{
-          namespace="jewelhub"
-        }[5m]))
+        sum(rate(flask_http_request_duration_seconds_count[5m]))
 
     # P50 latency
     - record: jewelhub:latency:p50
       expr: |
         histogram_quantile(0.50,
-          sum(rate(http_request_duration_seconds_bucket{
-            namespace="jewelhub"
-          }[5m])) by (le))
+          sum(rate(
+            flask_http_request_duration_seconds_bucket[5m]
+          )) by (le))
 
     # P95 latency
     - record: jewelhub:latency:p95
       expr: |
         histogram_quantile(0.95,
-          sum(rate(http_request_duration_seconds_bucket{
-            namespace="jewelhub"
-          }[5m])) by (le))
+          sum(rate(
+            flask_http_request_duration_seconds_bucket[5m]
+          )) by (le))
 
     # P99 latency
     - record: jewelhub:latency:p99
       expr: |
         histogram_quantile(0.99,
-          sum(rate(http_request_duration_seconds_bucket{
-            namespace="jewelhub"
-          }[5m])) by (le))
+          sum(rate(
+            flask_http_request_duration_seconds_bucket[5m]
+          )) by (le))
 
   # =====================
   # ERROR BUDGET
@@ -108,7 +98,7 @@ spec:
   - name: jewelhub.error.budget
     interval: 30s
     rules:
-    # Error budget remaining (availability)
+    # Error budget remaining
     - record: jewelhub:error_budget:remaining
       expr: |
         1 - (
@@ -138,13 +128,10 @@ spec:
     # 6 hour burn rate
     - record: jewelhub:burn_rate:6h
       expr: |
-        (1 - sum(rate(http_requests_total{
-          namespace="jewelhub",
-          status=~"2..|3.."
+        (1 - sum(rate(flask_http_request_total{
+          status=~"2.."
         }[6h]))
         /
-        sum(rate(http_requests_total{
-          namespace="jewelhub"
-        }[6h])))
+        sum(rate(flask_http_request_total[6h])))
         /
         (1 - 0.999)
