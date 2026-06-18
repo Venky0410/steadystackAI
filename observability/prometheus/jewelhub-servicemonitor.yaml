@@ -4,14 +4,14 @@ metadata:
   name: jewelhub-monitor
   namespace: monitoring
   labels:
-    app: jewelhub
     release: prometheus
 spec:
   namespaceSelector:
     matchNames:
       - jewelhub
   selector:
-    matchLabels: {}
+    matchLabels:
+      app: frontend
   endpoints:
   - port: http
     path: /metrics
