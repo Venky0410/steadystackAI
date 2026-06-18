@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: jewelhub-monitor
+  namespace: monitoring
+  labels:
+    app: jewelhub
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - jewelhub
+  selector:
+    matchLabels:
+      app: frontend
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
