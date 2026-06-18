@@ -78,3 +78,7 @@
   - Burn rate gauge
   - Latency percentiles (P50/P95/P99)
   - Budget consumed tracking
+- [x] prometheus_flask_exporter added
+- [x] ServiceMonitor configured
+- [x] Prometheus scraping JewelHub
+- [x] SLO data verified in Grafana
