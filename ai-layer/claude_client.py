@@ -15,11 +15,22 @@ def analyze_incident(alert, metrics, logs):
         logger.info(
             f"Sending to Claude: {alert['name']}"
         )
-
+        
         client = anthropic.Anthropic(
-            api_key=CLAUDE_API_KEY
+            api_key=CLAUDE_API_KEY,
         )
 
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+        
         # Build log summary
         log_summary = ""
         if logs.get('sample_logs'):
