@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-layer
+  namespace: steadystackai
+  labels:
+    app: ai-layer
+spec:
+  selector:
+    app: ai-layer
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
