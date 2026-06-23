@@ -1,5 +1,6 @@
 import logging
 import os
+import httpx
 import anthropic
 
 logger = logging.getLogger(__name__)
@@ -7,30 +8,18 @@ logger = logging.getLogger(__name__)
 CLAUDE_API_KEY = os.getenv('CLAUDE_API_KEY', '')
 
 def analyze_incident(alert, metrics, logs):
-    """
-    Send incident data to Claude for analysis
-    """
     try:
-        logger.info(
-            f"Sending to Claude: {alert['name']}"
-        )
+        logger.info(f"Sending to Claude: {alert['name']}")
 
-        # Build log summary
-        log_summary = ""
-        if logs.get('sample_logs'):
-            log_summary = "\n".join(
-                logs['sample_logs'][:5]
-            )
-        else:
-            log_summary = "No error logs found"
+        log_summary = "\n".join(
+            logs.get('sample_logs', [])[:5]
+        ) or "No error logs found"
 
-        # Build metrics summary
         metrics_summary = "\n".join([
             f"- {k}: {v}"
             for k, v in metrics.items()
         ]) if metrics else "No metrics available"
 
-        # Build prompt
         prompt = f"""You are an expert SRE analyzing
 a production incident for JewelHub,
 a microservices e-commerce application
@@ -58,28 +47,23 @@ running on AWS EKS.
 - user-service (port 5004)
 - notification-service (port 5005)
 
-Please provide a structured analysis:
-
+Please provide:
 1. ROOT CAUSE
-   What most likely caused this alert?
-
 2. IMPACT ASSESSMENT
-   What is the user impact?
-
-3. IMMEDIATE ACTIONS
-   Specific kubectl commands to run now
-
+3. IMMEDIATE ACTIONS (kubectl commands)
 4. INVESTIGATION STEPS
-   What to check next
-
 5. POSTMORTEM SUMMARY
-   Brief summary for documentation
 
-Keep response concise and actionable."""
+Be concise and actionable."""
 
-        # Use correct API format
+        http_client = httpx.Client(
+            timeout=60.0,
+            follow_redirects=True
+        )
+
         client = anthropic.Anthropic(
-            api_key=CLAUDE_API_KEY
+            api_key=CLAUDE_API_KEY,
+            http_client=http_client
         )
 
         response = client.messages.create(
