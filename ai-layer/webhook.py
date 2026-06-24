@@ -11,7 +11,6 @@ def handle_alert(alert_data):
     try:
         alerts = []
 
-        # Alertmanager sends alerts array
         raw_alerts = alert_data.get('alerts', [])
 
         for alert in raw_alerts:
@@ -19,8 +18,23 @@ def handle_alert(alert_data):
             if alert.get('status') != 'firing':
                 continue
 
+            # Get labels FIRST
             labels = alert.get('labels', {})
             annotations = alert.get('annotations', {})
+
+            # THEN check alert name
+            alert_name = labels.get('alertname', '')
+            skip_alerts = [
+                'Watchdog',
+                'InfoInhibitor',
+                'KubeSchedulerDown',
+                'KubeControllerManagerDown'
+            ]
+            if alert_name in skip_alerts:
+                logger.info(
+                    f"Skipping: {alert_name}"
+                )
+                continue
 
             # Extract service name
             service = (
