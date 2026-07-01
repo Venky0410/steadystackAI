@@ -21,10 +21,10 @@ env:
 
 jobs:
   # =====================
-  # FULL SETUP
+  # STAGE 1 - INFRASTRUCTURE
   # =====================
-  setup:
-    name: Full Setup
+  infrastructure:
+    name: 🏗️ Infrastructure
     runs-on: ubuntu-latest
     if: github.event.inputs.action == 'setup'
 
@@ -56,14 +56,6 @@ jobs:
           --region ${{ env.AWS_REGION }} \
           --name ${{ env.EKS_CLUSTER }}
 
-    - name: Install Helm and repos
-      run: |
-        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-        helm repo add prometheus-community \
-          https://prometheus-community.github.io/helm-charts
-        helm repo add elastic https://helm.elastic.co
-        helm repo update
-
     - name: Create namespaces
       run: |
         kubectl create namespace monitoring \
@@ -72,6 +64,42 @@ jobs:
           --dry-run=client -o yaml | kubectl apply -f -
         kubectl create namespace jewelhub \
           --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace steadystackai \
+          --dry-run=client -o yaml | kubectl apply -f -
+        echo "✅ Infrastructure ready!"
+
+  # =====================
+  # STAGE 2 - MONITORING (parallel with ELK)
+  # =====================
+  monitoring:
+    name: 📊 Monitoring
+    runs-on: ubuntu-latest
+    needs: infrastructure
+    if: github.event.inputs.action == 'setup'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ env.EKS_CLUSTER }}
+
+    - name: Install Helm
+      run: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        helm repo add prometheus-community \
+          https://prometheus-community.github.io/helm-charts
+        helm repo update
 
     - name: Install Prometheus and Grafana
       run: |
@@ -79,16 +107,19 @@ jobs:
           prometheus-community/kube-prometheus-stack \
           --namespace monitoring \
           --set grafana.adminPassword=JewelHub@2025 \
+          --set grafana.sidecar.dashboards.enabled=true \
+          --set grafana.sidecar.dashboards.label=grafana_dashboard \
           --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
           --wait --timeout=10m
         kubectl patch svc prometheus-grafana \
           -n monitoring \
           -p '{"spec": {"type": "LoadBalancer"}}'
-        kubectl patch svc prometheus-kube-prometheus-prometheus \
+        kubectl patch svc \
+          prometheus-kube-prometheus-prometheus \
           -n monitoring \
           -p '{"spec": {"type": "LoadBalancer"}}'
 
-    - name: Apply Alert Rules
+    - name: Apply Alert Rules and SLOs
       run: |
         kubectl apply -f \
           observability/prometheus/jewelhub-alerts.yaml
@@ -100,7 +131,41 @@ jobs:
           observability/grafana/slo-dashboard-configmap.yaml
         kubectl apply -f \
           observability/prometheus/jewelhub-servicemonitor.yaml
-        echo "✅ All rules applied!"
+        kubectl apply -f \
+          observability/prometheus/alertmanager-config.yaml
+        echo "✅ Monitoring ready!"
+
+  # =====================
+  # STAGE 2 - ELK (parallel with monitoring)
+  # =====================
+  elk:
+    name: 📋 ELK Stack
+    runs-on: ubuntu-latest
+    needs: infrastructure
+    if: github.event.inputs.action == 'setup'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ env.EKS_CLUSTER }}
+
+    - name: Install Helm
+      run: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        helm repo add elastic https://helm.elastic.co
+        helm repo update
 
     - name: Install Elasticsearch
       run: |
@@ -187,7 +252,6 @@ jobs:
           -n logging \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-        echo "⏳ Waiting for Kibana API..."
         until curl -s \
           http://$KIBANA:5601/api/status \
           2>/dev/null | grep -q "green"; do
@@ -195,7 +259,6 @@ jobs:
           sleep 10
         done
 
-        # Create filebeat index pattern
         curl -s -X POST \
           http://$KIBANA:5601/api/saved_objects/index-pattern \
           -H "kbn-xsrf: true" \
@@ -206,9 +269,7 @@ jobs:
               "timeFieldName": "@timestamp"
             }
           }'
-        echo "✅ Filebeat index pattern created!"
 
-        # Create postmortems index pattern
         curl -s -X POST \
           http://$KIBANA:5601/api/saved_objects/index-pattern \
           -H "kbn-xsrf: true" \
@@ -219,7 +280,33 @@ jobs:
               "timeFieldName": "@timestamp"
             }
           }'
-        echo "✅ Postmortems index pattern created!"
+        echo "✅ Kibana index patterns created!"
+
+  # =====================
+  # STAGE 3 - JEWELHUB
+  # =====================
+  jewelhub:
+    name: 💍 JewelHub
+    runs-on: ubuntu-latest
+    needs: [monitoring, elk]
+    if: github.event.inputs.action == 'setup'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ env.EKS_CLUSTER }}
 
     - name: Login to ECR
       id: login-ecr
@@ -228,21 +315,19 @@ jobs:
     - name: Clone JewelHub
       run: |
         git clone https://github.com/Venky0410/JewelHub.git
-        echo "Latest commit:"
         cd JewelHub && git log --oneline -5
 
     - name: Set image tag
       run: |
         cd JewelHub
-        echo "IMAGE_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        echo "IMAGE_TAG=$(git rev-parse --short HEAD)" \
+          >> $GITHUB_ENV
 
     - name: Build and push all services
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
         cd JewelHub
-
-        # Check if image already exists in ECR
         IMAGE_EXISTS=$(aws ecr describe-images \
           --repository-name jewelhub-frontend \
           --image-ids imageTag=${{ env.IMAGE_TAG }} \
@@ -251,20 +336,12 @@ jobs:
           --output text 2>/dev/null || echo "NOT_FOUND")
 
         if [ "$IMAGE_EXISTS" = "${{ env.IMAGE_TAG }}" ]; then
-          echo "✅ Images already exist for tag ${{ env.IMAGE_TAG }}"
-          echo "⏭️ Skipping build and push!"
-          echo "SKIP_BUILD=true" >> $GITHUB_ENV
+          echo "✅ Images exist! Skipping build..."
         else
-          echo "🔨 New code detected! Building images..."
-          echo "SKIP_BUILD=false" >> $GITHUB_ENV
-
           for service in \
-            product-service \
-            cart-service \
-            order-service \
-            user-service \
-            notification-service \
-            frontend; do
+            product-service cart-service \
+            order-service user-service \
+            notification-service frontend; do
             echo "Building $service..."
             docker build \
               -t $ECR_REGISTRY/jewelhub-$service:${{ env.IMAGE_TAG }} \
@@ -291,45 +368,77 @@ jobs:
         kubectl apply -f k8s/user-service/
         kubectl apply -f k8s/notification-service/
         kubectl apply -f k8s/frontend/
-        kubectl rollout status deployment/frontend \
-          -n jewelhub --timeout=5m
+
+        until kubectl get deployment frontend \
+          -n jewelhub \
+          -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
+          2>/dev/null | grep -q "True"; do
+          echo "Frontend not ready yet..."
+          sleep 15
+        done
         echo "✅ JewelHub deployed!"
+
+  # =====================
+  # STAGE 4 - AI LAYER
+  # =====================
+  ai-layer:
+    name: 🤖 AI Layer
+    runs-on: ubuntu-latest
+    needs: jewelhub
+    if: github.event.inputs.action == 'setup'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ env.EKS_CLUSTER }}
+
+    - name: Login to ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
 
     - name: Build and Push AI Layer
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
-        # Build AI Layer image
         docker build \
           -t $ECR_REGISTRY/steadystackai-ai-layer:latest \
           ./ai-layer
-
         docker push \
           $ECR_REGISTRY/steadystackai-ai-layer:latest
         echo "✅ AI Layer image pushed!"
 
     - name: Deploy AI Layer
       run: |
-        # Create namespace
+        ACCOUNT_ID=$(aws sts get-caller-identity \
+          --query Account --output text)
+
         kubectl create namespace steadystackai \
           --dry-run=client -o yaml | kubectl apply -f -
 
-        # Create secret
         kubectl create secret generic ai-layer-secrets \
           --from-literal=claude-api-key=${{ secrets.CLAUDE_API_KEY }} \
           -n steadystackai \
           --dry-run=client -o yaml | kubectl apply -f -
 
-        # Replace ACCOUNT_ID in manifests
         find ./ai-layer/k8s -name "*.yaml" | \
           xargs sed -i \
-          "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g"
+          "s|ACCOUNT_ID|$ACCOUNT_ID|g"
 
-        # Deploy
         kubectl apply -f ai-layer/k8s/deployment.yaml
         kubectl apply -f ai-layer/k8s/service.yaml
 
-        # Wait for deployment
         until kubectl get deployment ai-layer \
           -n steadystackai \
           -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
@@ -339,9 +448,31 @@ jobs:
         done
         echo "✅ AI Layer deployed!"
 
+  # =====================
+  # STAGE 5 - SUMMARY
+  # =====================
+  summary:
+    name: 🚀 Platform Ready
+    runs-on: ubuntu-latest
+    needs: [monitoring, elk, jewelhub, ai-layer]
+    if: github.event.inputs.action == 'setup'
+
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ${{ env.EKS_CLUSTER }}
+
     - name: Wait for Load Balancers
       run: |
-        echo "⏳ Waiting for all Load Balancer URLs..."
         for svc in \
           "prometheus-grafana monitoring" \
           "frontend jewelhub" \
@@ -352,43 +483,50 @@ jobs:
             -n $ns \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
             2>/dev/null | grep -q "elb.amazonaws.com"; do
-            echo "$name URL not ready yet..."
+            echo "$name not ready yet..."
             sleep 15
           done
-          echo "✅ $name URL ready!"
+          echo "✅ $name ready!"
         done
 
     - name: Get All URLs
       run: |
-        GRAFANA_URL=$(kubectl get svc prometheus-grafana \
+        GRAFANA=$(kubectl get svc prometheus-grafana \
           -n monitoring \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-        PROMETHEUS_URL=$(kubectl get svc \
+        PROMETHEUS=$(kubectl get svc \
           prometheus-kube-prometheus-prometheus \
           -n monitoring \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-        KIBANA_URL=$(kubectl get svc kibana-kibana \
+        KIBANA=$(kubectl get svc kibana-kibana \
           -n logging \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-        JEWELHUB_URL=$(kubectl get svc frontend \
+        JEWELHUB=$(kubectl get svc frontend \
           -n jewelhub \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-        echo "## 🚀 SteadyStackAI Platform Ready!" >> $GITHUB_STEP_SUMMARY
+        echo "## 🚀 SteadyStackAI Platform Ready!" \
+          >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "| Service | URL | Login |" >> $GITHUB_STEP_SUMMARY
         echo "|---------|-----|-------|" >> $GITHUB_STEP_SUMMARY
-        echo "| 💍 JewelHub | http://$JEWELHUB_URL | - |" >> $GITHUB_STEP_SUMMARY
-        echo "| 📊 Grafana | http://$GRAFANA_URL | admin/JewelHub@2025 |" >> $GITHUB_STEP_SUMMARY
-        echo "| 📈 Prometheus | http://$PROMETHEUS_URL:9090 | - |" >> $GITHUB_STEP_SUMMARY
-        echo "| 📋 Kibana | http://$KIBANA_URL:5601 | No login needed |" >> $GITHUB_STEP_SUMMARY
+        echo "| 💍 JewelHub | http://$JEWELHUB | - |" \
+          >> $GITHUB_STEP_SUMMARY
+        echo "| 📊 Grafana | http://$GRAFANA | admin/JewelHub@2025 |" \
+          >> $GITHUB_STEP_SUMMARY
+        echo "| 📈 Prometheus | http://$PROMETHEUS:9090 | - |" \
+          >> $GITHUB_STEP_SUMMARY
+        echo "| 📋 Kibana | http://$KIBANA:5601 | No login needed |" \
+          >> $GITHUB_STEP_SUMMARY
+        echo "| 🤖 AI Layer | Internal ClusterIP | - |" \
+          >> $GITHUB_STEP_SUMMARY
         echo "**Setup completed at:** $(date)" >> $GITHUB_STEP_SUMMARY
 
   # =====================
   # RESUME: MONITORING ONLY
   # =====================
   setup-monitoring:
-    name: Setup Monitoring Only
+    name: 📊 Setup Monitoring Only
     runs-on: ubuntu-latest
     if: github.event.inputs.action == 'setup-monitoring'
 
@@ -429,34 +567,47 @@ jobs:
         kubectl patch svc prometheus-grafana \
           -n monitoring \
           -p '{"spec": {"type": "LoadBalancer"}}'
-        kubectl patch svc prometheus-kube-prometheus-prometheus \
+        kubectl patch svc \
+          prometheus-kube-prometheus-prometheus \
           -n monitoring \
           -p '{"spec": {"type": "LoadBalancer"}}'
         kubectl apply -f \
           observability/prometheus/jewelhub-alerts.yaml
+        kubectl apply -f \
+          observability/slos/slo-rules.yaml
+        kubectl apply -f \
+          observability/slos/burn-rate-alerts.yaml
+        kubectl apply -f \
+          observability/grafana/slo-dashboard-configmap.yaml
+        kubectl apply -f \
+          observability/prometheus/jewelhub-servicemonitor.yaml
+        kubectl apply -f \
+          observability/prometheus/alertmanager-config.yaml
         echo "✅ Monitoring ready!"
 
     - name: Get Monitoring URLs
       run: |
         sleep 60
-        GRAFANA_URL=$(kubectl get svc prometheus-grafana \
+        GRAFANA=$(kubectl get svc prometheus-grafana \
           -n monitoring \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-        PROMETHEUS_URL=$(kubectl get svc \
+        PROMETHEUS=$(kubectl get svc \
           prometheus-kube-prometheus-prometheus \
           -n monitoring \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
         echo "## 📊 Monitoring Ready!" >> $GITHUB_STEP_SUMMARY
         echo "| Service | URL | Login |" >> $GITHUB_STEP_SUMMARY
         echo "|---------|-----|-------|" >> $GITHUB_STEP_SUMMARY
-        echo "| 📊 Grafana | http://$GRAFANA_URL | admin/JewelHub@2025 |" >> $GITHUB_STEP_SUMMARY
-        echo "| 📈 Prometheus | http://$PROMETHEUS_URL:9090 | - |" >> $GITHUB_STEP_SUMMARY
+        echo "| 📊 Grafana | http://$GRAFANA | admin/JewelHub@2025 |" \
+          >> $GITHUB_STEP_SUMMARY
+        echo "| 📈 Prometheus | http://$PROMETHEUS:9090 | - |" \
+          >> $GITHUB_STEP_SUMMARY
 
   # =====================
   # RESUME: ELK ONLY
   # =====================
   setup-elk:
-    name: Setup ELK Only
+    name: 📋 Setup ELK Only
     runs-on: ubuntu-latest
     if: github.event.inputs.action == 'setup-elk'
 
@@ -483,26 +634,14 @@ jobs:
         helm repo add elastic https://helm.elastic.co
         helm repo update
 
-# 🆕 SPLIT INTO 3 SEPARATE STEPS WITH ECR CACHE + PROPER WAITS
     - name: Install Elasticsearch
       run: |
-        # 🆕 Clean namespace for fresh install
         kubectl delete namespace logging \
           --force 2>/dev/null || true
         kubectl wait \
           --for=delete namespace/logging \
           --timeout=60s 2>/dev/null || true
         kubectl create namespace logging
-
-        # 🆕 Use ECR cached image
-        ACCOUNT_ID=$(aws sts get-caller-identity \
-          --query Account --output text)
-        ECR_URL="$ACCOUNT_ID.dkr.ecr.eu-west-1.amazonaws.com"
-
-        aws ecr get-login-password \
-          --region eu-west-1 | \
-          docker login --username AWS \
-          --password-stdin $ECR_URL
 
         helm upgrade --install elasticsearch \
           elastic/elasticsearch \
@@ -513,11 +652,8 @@ jobs:
           --set resources.requests.memory=512Mi \
           --set resources.limits.memory=2Gi \
           --set esJavaOpts="-Xmx1g -Xms1g" \
-          --set persistence.enabled=false \
-          --set "image=$ECR_URL/elasticsearch-cache" \
-          --set "imageTag=7.17.3"
+          --set persistence.enabled=false
 
-        # 🆕 Wait until pod actually ready
         until kubectl get pod elasticsearch-master-0 \
           -n logging \
           -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' \
@@ -526,7 +662,6 @@ jobs:
           sleep 10
         done
 
-        # 🆕 Wait until API actually responds
         until kubectl exec \
           -n logging elasticsearch-master-0 \
           -- curl -s http://localhost:9200 \
@@ -538,12 +673,6 @@ jobs:
 
     - name: Install Kibana
       run: |
-        # 🆕 Use ECR cached image
-        ACCOUNT_ID=$(aws sts get-caller-identity \
-          --query Account --output text)
-        ECR_URL="$ACCOUNT_ID.dkr.ecr.eu-west-1.amazonaws.com"
-
-        # 🆕 Clean old failed jobs
         kubectl delete jobs -n logging \
           --field-selector status.successful=0 \
           2>/dev/null || true
@@ -557,11 +686,8 @@ jobs:
           --set resources.requests.memory=256Mi \
           --set resources.limits.memory=1Gi \
           --set service.type=LoadBalancer \
-          --set elasticsearchHosts="http://elasticsearch-master:9200" \
-          --set "image=$ECR_URL/kibana-cache" \
-          --set "imageTag=7.17.3"
+          --set elasticsearchHosts="http://elasticsearch-master:9200"
 
-        # 🆕 Wait until actually available
         until kubectl get deployment kibana-kibana \
           -n logging \
           -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
@@ -573,19 +699,11 @@ jobs:
 
     - name: Install Filebeat
       run: |
-        # 🆕 Use ECR cached image
-        ACCOUNT_ID=$(aws sts get-caller-identity \
-          --query Account --output text)
-        ECR_URL="$ACCOUNT_ID.dkr.ecr.eu-west-1.amazonaws.com"
-
         helm upgrade --install filebeat \
           elastic/filebeat \
           --version 7.17.3 \
-          --namespace logging \
-          --set "image=$ECR_URL/filebeat-cache" \
-          --set "imageTag=7.17.3"
+          --namespace logging
 
-        # 🆕 Wait until daemonset ready
         until kubectl get daemonset filebeat-filebeat \
           -n logging \
           -o jsonpath='{.status.numberReady}' \
@@ -601,7 +719,6 @@ jobs:
           -n logging \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-        echo "⏳ Waiting for Kibana API..."
         until curl -s \
           http://$KIBANA:5601/api/status \
           2>/dev/null | grep -q "green"; do
@@ -609,7 +726,6 @@ jobs:
           sleep 10
         done
 
-        # Create filebeat index pattern
         curl -s -X POST \
           http://$KIBANA:5601/api/saved_objects/index-pattern \
           -H "kbn-xsrf: true" \
@@ -620,9 +736,7 @@ jobs:
               "timeFieldName": "@timestamp"
             }
           }'
-        echo "✅ Filebeat index pattern created!"
 
-        # Create postmortems index pattern
         curl -s -X POST \
           http://$KIBANA:5601/api/saved_objects/index-pattern \
           -H "kbn-xsrf: true" \
@@ -633,23 +747,25 @@ jobs:
               "timeFieldName": "@timestamp"
             }
           }'
-        echo "✅ Postmortems index pattern created!"
+        echo "✅ Kibana index patterns created!"
+
     - name: Get Kibana URL
       run: |
-        sleep 60
-        KIBANA_URL=$(kubectl get svc kibana-kibana \
+        sleep 30
+        KIBANA=$(kubectl get svc kibana-kibana \
           -n logging \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
         echo "## 📋 ELK Stack Ready!" >> $GITHUB_STEP_SUMMARY
         echo "| Service | URL | Login |" >> $GITHUB_STEP_SUMMARY
         echo "|---------|-----|-------|" >> $GITHUB_STEP_SUMMARY
-        echo "| 📋 Kibana | http://$KIBANA_URL:5601 | No login needed |" >> $GITHUB_STEP_SUMMARY
+        echo "| 📋 Kibana | http://$KIBANA:5601 | No login needed |" \
+          >> $GITHUB_STEP_SUMMARY
 
   # =====================
   # RESUME: JEWELHUB ONLY
   # =====================
   setup-jewelhub:
-    name: Deploy JewelHub Only
+    name: 💍 Deploy JewelHub Only
     runs-on: ubuntu-latest
     if: github.event.inputs.action == 'setup-jewelhub'
 
@@ -677,13 +793,13 @@ jobs:
     - name: Clone JewelHub
       run: |
         git clone https://github.com/Venky0410/JewelHub.git
-        echo "Latest commits:"
         cd JewelHub && git log --oneline -5
 
     - name: Set image tag
       run: |
         cd JewelHub
-        echo "IMAGE_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        echo "IMAGE_TAG=$(git rev-parse --short HEAD)" \
+          >> $GITHUB_ENV
 
     - name: Build and push all services
       env:
@@ -691,12 +807,9 @@ jobs:
       run: |
         cd JewelHub
         for service in \
-          product-service \
-          cart-service \
-          order-service \
-          user-service \
-          notification-service \
-          frontend; do
+          product-service cart-service \
+          order-service user-service \
+          notification-service frontend; do
           echo "Building $service..."
           docker build \
             -t $ECR_REGISTRY/jewelhub-$service:${{ env.IMAGE_TAG }} \
@@ -715,20 +828,11 @@ jobs:
           "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g"
         find ./k8s -name "*.yaml" | xargs sed -i \
           "s|:latest|:${{ env.IMAGE_TAG }}|g"
-        # 🆕 Clean existing deployments first
         kubectl delete deployment \
           frontend product-service cart-service \
           order-service user-service notification-service \
           -n jewelhub 2>/dev/null || true
-
-        # 🆕 Wait for old pods to terminate
-        until [ $(kubectl get pods \
-          -n jewelhub --no-headers \
-          2>/dev/null | wc -l) -eq 0 ]; do
-          echo "Waiting for old pods to terminate..."
-          sleep 10
-        done
-
+        sleep 30
         kubectl create namespace jewelhub \
           --dry-run=client -o yaml | kubectl apply -f -
         kubectl apply -f k8s/namespace.yaml
@@ -739,7 +843,6 @@ jobs:
         kubectl apply -f k8s/notification-service/
         kubectl apply -f k8s/frontend/
 
-        # 🆕 Wait for ALL deployments not just frontend
         for deployment in \
           frontend product-service cart-service \
           order-service user-service notification-service; do
@@ -752,43 +855,34 @@ jobs:
           done
           echo "✅ $deployment ready!"
         done
-        echo "✅ JewelHub deployed with tag: ${{ env.IMAGE_TAG }}"
+        echo "✅ JewelHub deployed!"
 
     - name: Build and Push AI Layer
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
-        # Build AI Layer image
         docker build \
           -t $ECR_REGISTRY/steadystackai-ai-layer:latest \
           ./ai-layer
-
         docker push \
           $ECR_REGISTRY/steadystackai-ai-layer:latest
         echo "✅ AI Layer image pushed!"
 
     - name: Deploy AI Layer
       run: |
-        # Create namespace
+        ACCOUNT_ID=$(aws sts get-caller-identity \
+          --query Account --output text)
         kubectl create namespace steadystackai \
           --dry-run=client -o yaml | kubectl apply -f -
-
-        # Create secret
         kubectl create secret generic ai-layer-secrets \
           --from-literal=claude-api-key=${{ secrets.CLAUDE_API_KEY }} \
           -n steadystackai \
           --dry-run=client -o yaml | kubectl apply -f -
-
-        # Replace ACCOUNT_ID in manifests
         find ./ai-layer/k8s -name "*.yaml" | \
           xargs sed -i \
-          "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g"
-
-        # Deploy
+          "s|ACCOUNT_ID|$ACCOUNT_ID|g"
         kubectl apply -f ai-layer/k8s/deployment.yaml
         kubectl apply -f ai-layer/k8s/service.yaml
-
-        # Wait for deployment
         until kubectl get deployment ai-layer \
           -n steadystackai \
           -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
@@ -797,9 +891,9 @@ jobs:
           sleep 15
         done
         echo "✅ AI Layer deployed!"
+
     - name: Get JewelHub URL
       run: |
-        echo "⏳ Waiting for Load Balancer URL..."
         until kubectl get svc frontend \
           -n jewelhub \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
@@ -811,7 +905,6 @@ jobs:
           -n jewelhub \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
         echo "## 💍 JewelHub Deployed!" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
         echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
         echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
         echo "| 🌍 URL | http://$URL |" >> $GITHUB_STEP_SUMMARY
@@ -822,7 +915,7 @@ jobs:
   # DESTROY
   # =====================
   destroy:
-    name: Destroy Everything
+    name: 💥 Destroy Everything
     runs-on: ubuntu-latest
     if: github.event.inputs.action == 'destroy'
 
@@ -839,7 +932,8 @@ jobs:
 
     - name: Install kubectl
       run: |
-        curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
+        curl -LO \
+          "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl"
         chmod +x kubectl
         sudo mv kubectl /usr/local/bin/
 
@@ -859,13 +953,13 @@ jobs:
           kubectl delete svc --all -n jewelhub || true
           kubectl delete svc --all -n monitoring || true
           kubectl delete svc --all -n logging || true
+          kubectl delete svc --all -n steadystackai || true
           echo "Waiting 120 seconds for LBs to delete..."
           sleep 120
         else
           echo "⚠️ No EKS cluster found"
         fi
 
-        # Always delete ALL classic LBs
         echo "Deleting any remaining classic LBs..."
         aws elb describe-load-balancers \
           --region ${{ env.AWS_REGION }} \
@@ -879,21 +973,19 @@ jobs:
             fi
         done
 
-        # Wait for LBs to fully delete
         echo "Final wait 90 seconds..."
         sleep 90
 
-        # Verify LBs gone
         REMAINING=$(aws elb describe-load-balancers \
           --region ${{ env.AWS_REGION }} \
           --query 'LoadBalancerDescriptions[*].LoadBalancerName' \
           --output text)
         if [ ! -z "$REMAINING" ]; then
-          echo "⚠️ LBs still deleting, waiting 60 more seconds..."
+          echo "⚠️ LBs still deleting..."
           sleep 60
         fi
         echo "✅ All LBs deleted!"
- 
+
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
