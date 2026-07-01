@@ -181,6 +181,46 @@ jobs:
         done
         echo "✅ Filebeat ready!"
 
+    - name: Create Kibana Index Patterns
+      run: |
+        KIBANA=$(kubectl get svc kibana-kibana \
+          -n logging \
+          -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+        echo "⏳ Waiting for Kibana API..."
+        until curl -s \
+          http://$KIBANA:5601/api/status \
+          2>/dev/null | grep -q "green"; do
+          echo "Kibana not ready..."
+          sleep 10
+        done
+
+        # Create filebeat index pattern
+        curl -s -X POST \
+          http://$KIBANA:5601/api/saved_objects/index-pattern \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "attributes": {
+              "title": "filebeat-*",
+              "timeFieldName": "@timestamp"
+            }
+          }'
+        echo "✅ Filebeat index pattern created!"
+
+        # Create postmortems index pattern
+        curl -s -X POST \
+          http://$KIBANA:5601/api/saved_objects/index-pattern \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "attributes": {
+              "title": "steadystackai-postmortems",
+              "timeFieldName": "@timestamp"
+            }
+          }'
+        echo "✅ Postmortems index pattern created!"
+
     - name: Login to ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
@@ -554,6 +594,46 @@ jobs:
           sleep 10
         done
         echo "✅ Filebeat ready!"
+
+    - name: Create Kibana Index Patterns
+      run: |
+        KIBANA=$(kubectl get svc kibana-kibana \
+          -n logging \
+          -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+        echo "⏳ Waiting for Kibana API..."
+        until curl -s \
+          http://$KIBANA:5601/api/status \
+          2>/dev/null | grep -q "green"; do
+          echo "Kibana not ready..."
+          sleep 10
+        done
+
+        # Create filebeat index pattern
+        curl -s -X POST \
+          http://$KIBANA:5601/api/saved_objects/index-pattern \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "attributes": {
+              "title": "filebeat-*",
+              "timeFieldName": "@timestamp"
+            }
+          }'
+        echo "✅ Filebeat index pattern created!"
+
+        # Create postmortems index pattern
+        curl -s -X POST \
+          http://$KIBANA:5601/api/saved_objects/index-pattern \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "attributes": {
+              "title": "steadystackai-postmortems",
+              "timeFieldName": "@timestamp"
+            }
+          }'
+        echo "✅ Postmortems index pattern created!"
     - name: Get Kibana URL
       run: |
         sleep 60
