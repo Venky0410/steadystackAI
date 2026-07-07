@@ -94,3 +94,17 @@
 - [x] Deployed on EKS
 - [x] Connected to Alertmanager
 - [x] MTTR reduced from hours to minutes
+
+
+### ✅ Phase 8 — Chaos Engineering
+- [x] Chaos experiment script created
+- [x] cart-service pod killed deliberately
+- [x] Kubernetes auto-healed in ~30 secs
+- [x] SLOs reacted in Grafana
+- [x] Burn rate spiked during chaos
+- [x] AI Layer detected incident
+- [x] Claude analyzed real errors
+- [x] Postmortem auto-generated
+- [x] System fully recovered
+- [x] Zero manual intervention
+- [x] Proven end-to-end pipeline!
